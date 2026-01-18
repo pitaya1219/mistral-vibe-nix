@@ -1,0 +1,92 @@
+name: Update Nix Flake
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # Every day at 3:00 AM
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-flake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          repository: ${{ gitea.repository }}
+          ref: main
+          token: ${{ secrets.GITHUB_TOKEN }}
+          github-server-url: ${{ vars.SERVER_URL || gitea.server_url }}
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Configure git
+        env:
+          SERVER_URL: ${{ vars.SERVER_URL || gitea.server_url }}
+        run: |
+          git config user.name "gitea-actions[bot]"
+          DOMAIN=$(echo "${SERVER_URL}" | sed 's|https\?://||')
+          git config user.email "gitea-actions[bot]@noreply.${DOMAIN}"
+
+      - name: Update flake inputs
+        run: nix flake update
+
+      - name: Check for changes and create PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          SERVER_URL: ${{ vars.SERVER_URL || gitea.server_url }}
+          REPO: ${{ gitea.repository }}
+        run: |
+          echo "=== Checking for changes ==="
+          git status
+          git diff --stat flake.lock || true
+
+          if git diff --quiet flake.lock; then
+            echo "No changes to flake.lock"
+            exit 0
+          fi
+
+          echo "=== Changes detected, creating PR ==="
+          BRANCH="chore/auto-update-flake"
+          git checkout -B "$BRANCH"
+          git add flake.lock
+          git commit -m "chore: Update flake.lock."
+
+          echo "=== Pushing branch ==="
+          git push -f origin "$BRANCH"
+
+          echo "=== Checking for existing PR ==="
+          EXISTING_PR=$(curl -s \
+            -H "Authorization: token ${BOT_TOKEN}" \
+            "${SERVER_URL}/api/v1/repos/${REPO}/pulls?state=open")
+          echo "Open PRs count: $(echo "$EXISTING_PR" | grep -o '"number"' | wc -l)"
+
+          # Check if there's a PR from our specific branch
+          if echo "$EXISTING_PR" | grep -q "\"ref\":\"${BRANCH}\""; then
+            echo "PR from ${BRANCH} already exists, skipping creation"
+            exit 0
+          fi
+          echo "No existing PR from ${BRANCH}, creating one..."
+
+          echo "=== Creating PR via API ==="
+          RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
+            -H "Authorization: token ${BOT_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "title": "chore: Update flake.lock",
+              "body": "Automated flake.lock update.\n\nThis PR updates the Nix flake inputs to their latest versions.",
+              "head": "'"$BRANCH"'",
+              "base": "main"
+            }' \
+            "${SERVER_URL}/api/v1/repos/${REPO}/pulls")
+          echo "API Response: $RESPONSE"
