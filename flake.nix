@@ -22,7 +22,7 @@
     };
 
     mistral-vibe-src = {
-      url = "github:mistralai/mistral-vibe/v1.3.5";
+      url = "github:mistralai/mistral-vibe";
       flake = false;
     };
   };
