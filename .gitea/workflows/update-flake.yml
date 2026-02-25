@@ -37,8 +37,56 @@ jobs:
           DOMAIN=$(echo "${SERVER_URL}" | sed 's|https\?://||')
           git config user.email "gitea-actions[bot]@noreply.${DOMAIN}"
 
+      - name: Get current mistral-vibe version
+        id: old-version
+        run: |
+          OLD_REV=$(jq -r '.nodes."mistral-vibe-src".locked.rev // "unknown"' flake.lock)
+          echo "rev=$OLD_REV" >> $GITHUB_OUTPUT
+          echo "Current mistral-vibe revision: $OLD_REV"
+
       - name: Update flake inputs
         run: nix flake update
+
+      - name: Get new mistral-vibe version and extract changelog
+        id: new-version
+        env:
+          OLD_REV: ${{ steps.old-version.outputs.rev }}
+        run: |
+          NEW_REV=$(jq -r '.nodes."mistral-vibe-src".locked.rev // "unknown"' flake.lock)
+          echo "rev=$NEW_REV" >> $GITHUB_OUTPUT
+          echo "New mistral-vibe revision: $NEW_REV"
+
+          # Extract changelog if mistral-vibe was updated
+          if [ "$OLD_REV" != "$NEW_REV" ] && [ "$OLD_REV" != "unknown" ] && [ "$NEW_REV" != "unknown" ]; then
+            echo "Fetching changelog from GitHub..."
+
+            # Fetch the compare view from GitHub
+            COMPARE_URL="https://github.com/mistralai/mistral-vibe/compare/${OLD_REV}...${NEW_REV}"
+            echo "compare_url=$COMPARE_URL" >> $GITHUB_OUTPUT
+
+            # Try to get the latest release notes
+            RELEASE_NOTES=$(curl -s https://api.github.com/repos/mistralai/mistral-vibe/releases/latest | \
+              jq -r '.body // "No release notes available"' | head -n 20)
+
+            # Save changelog to file for PR body
+            cat > /tmp/changelog.txt << 'EOF'
+          ## Mistral Vibe Updates
+
+          **Comparison:** [View changes](${COMPARE_URL})
+
+          ### Latest Release Notes
+          ${RELEASE_NOTES}
+          EOF
+
+            # Replace variables in the template
+            sed -i "s|\${COMPARE_URL}|${COMPARE_URL}|g" /tmp/changelog.txt
+            sed -i "s|\${RELEASE_NOTES}|${RELEASE_NOTES}|g" /tmp/changelog.txt
+
+            echo "has_changelog=true" >> $GITHUB_OUTPUT
+          else
+            echo "No mistral-vibe update detected"
+            echo "has_changelog=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Check for changes and create PR
         env:
@@ -78,13 +126,23 @@ jobs:
           fi
           echo "No existing PR from ${BRANCH}, creating one..."
 
+          echo "=== Preparing PR body ==="
+          PR_BODY="Automated flake.lock update.\n\nThis PR updates the Nix flake inputs to their latest versions."
+
+          # Append changelog if available
+          if [ "${{ steps.new-version.outputs.has_changelog }}" = "true" ] && [ -f /tmp/changelog.txt ]; then
+            echo "Including changelog in PR body"
+            CHANGELOG=$(cat /tmp/changelog.txt)
+            PR_BODY="${PR_BODY}\n\n${CHANGELOG}"
+          fi
+
           echo "=== Creating PR via API ==="
           RESPONSE=$(curl -s -w "\nHTTP_CODE:%{http_code}" -X POST \
             -H "Authorization: token ${BOT_TOKEN}" \
             -H "Content-Type: application/json" \
             -d '{
               "title": "chore: Update flake.lock",
-              "body": "Automated flake.lock update.\n\nThis PR updates the Nix flake inputs to their latest versions.",
+              "body": "'"$(echo -e "$PR_BODY" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g')"'",
               "head": "'"$BRANCH"'",
               "base": "main"
             }' \
