@@ -3,11 +3,11 @@
     "mistral-vibe-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1777984811,
-        "narHash": "sha256-TOA1ybK41f3+/I5gCaPlAd3yo9N399l6JumWnATbS00=",
+        "lastModified": 1778154956,
+        "narHash": "sha256-NiW4VZyQerFhDEDXOOTNzOpsPnZvoyxJWMfg9hHJJ8c=",
         "owner": "mistralai",
         "repo": "mistral-vibe",
-        "rev": "4972dd5694ed41290d9ddd7de3ead55b123f4750",
+        "rev": "b23f49e5f44e95aa997439a74fd5b470d762ecb0",
         "type": "github"
       },
       "original": {
