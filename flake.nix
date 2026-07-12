@@ -64,6 +64,20 @@
                 pkgs.tree-sitter
               ];
             });
+
+            # WORKAROUND: proot (Termux) does not support fchmodat(AT_FDCWD,"",AT_EMPTY_PATH),
+            # causing GNU coreutils cp to fail with ENOENT when copying the source directory.
+            # Use tar instead of cp for the unpackPhase. Safe on all platforms.
+            mistral-vibe = prev.mistral-vibe.overrideAttrs (_: {
+              unpackPhase = ''
+                runHook preUnpack
+                mkdir source
+                tar cf - -C "$src" . | tar xf - -C source
+                chmod -R u+w source
+                sourceRoot="source"
+                runHook postUnpack
+              '';
+            });
           };
 
           # Compose all overlays into final Python set
