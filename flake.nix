@@ -38,9 +38,23 @@
           pkgs = nixpkgs.legacyPackages.${system};
           lib = pkgs.lib;
 
+          # WORKAROUND: upstream's pyproject.toml has declared [[tool.uv.index]]
+          # before [tool.uv] since v2.24.3 (mistralai/mistral-vibe@a84be03),
+          # still unfixed as of v2.25.0. Nix's fromTOML rejects that ordering
+          # as "table defined twice", so loadWorkspace can't read the file
+          # as-is. Swap the two blocks back to the order that parses; drop
+          # this once upstream reorders them.
+          mistral-vibe-src-patched = pkgs.runCommand "mistral-vibe-src-patched" {
+            nativeBuildInputs = [ pkgs.python3 ];
+          } ''
+            cp -r ${mistral-vibe-src} $out
+            chmod -R u+w $out
+            python3 ${./fix-pyproject-toml-order.py} "$out/pyproject.toml"
+          '';
+
           # Load workspace from upstream source
           workspace = uv2nix.lib.workspace.loadWorkspace {
-            workspaceRoot = mistral-vibe-src;
+            workspaceRoot = mistral-vibe-src-patched;
           };
 
           # Use Python 3.12 (minimum required version)
