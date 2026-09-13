@@ -3,11 +3,11 @@
     "mistral-vibe-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1788511875,
-        "narHash": "sha256-vwlN4VdyVhaALT8Ob233Lcc7261teCD7jyfn8uiH0MA=",
+        "lastModified": 1789238340,
+        "narHash": "sha256-v+Pl15r32DaB/+Yo1zKvMP1iFmC1q111s16KNpWLanI=",
         "owner": "mistralai",
         "repo": "mistral-vibe",
-        "rev": "6c79ef0e1ee484d7069bc38590d5917d3914cd48",
+        "rev": "19b5b74faa78d0816b8d4d4c7d7543fc3520678c",
         "type": "github"
       },
       "original": {
@@ -18,11 +18,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1788752844,
-        "narHash": "sha256-VaWGJ6+cIYN2erfSecbRV+4ljI185Ty2wUrXyvQbgOw=",
+        "lastModified": 1789149629,
+        "narHash": "sha256-H6GwaZzZf+4npqv0tph94w9tZddSjFjmQrVsW0z78uk=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "dc5d91f840324650bac8c379428c7037a416959a",
+        "rev": "eaad089433ca2bb662274377d33df3d0e51ef28b",
         "type": "github"
       },
       "original": {
