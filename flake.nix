@@ -33,6 +33,19 @@
 
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
 
+      # The harness extension compiles the `v8` crate (pulled in by deno_core),
+      # whose build script downloads a prebuilt static library from the rusty_v8
+      # GitHub release at build time unless RUSTY_V8_ARCHIVE points at a local
+      # copy. deno_core enables only the `simdutf` feature of v8, which is what
+      # selects the archive name (see prebuilt_features_suffix in the v8 build
+      # script).
+      rustyV8Archives = {
+        "x86_64-linux" = "librusty_v8_simdutf_release_x86_64-unknown-linux-gnu.a.gz";
+        "aarch64-linux" = "librusty_v8_simdutf_release_aarch64-unknown-linux-gnu.a.gz";
+        "x86_64-darwin" = "librusty_v8_simdutf_release_x86_64-apple-darwin.a.gz";
+        "aarch64-darwin" = "librusty_v8_simdutf_release_aarch64-apple-darwin.a.gz";
+      };
+
       mkMistralVibe = system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
@@ -40,7 +53,7 @@
 
           # WORKAROUND: upstream's pyproject.toml has declared [[tool.uv.index]]
           # before [tool.uv] since v2.24.3 (mistralai/mistral-vibe@a84be03),
-          # still unfixed as of v2.25.0. Nix's fromTOML rejects that ordering
+          # still unfixed as of v2.25.8. Nix's fromTOML rejects that ordering
           # as "table defined twice", so loadWorkspace can't read the file
           # as-is. Swap the two blocks back to the order that parses; drop
           # this once upstream reorders them.
@@ -51,6 +64,44 @@
             chmod -R u+w $out
             python3 ${./fix-pyproject-toml-order.py} "$out/pyproject.toml"
           '';
+
+          # Since v2.25.8 the wheel is produced by a custom maturin backend
+          # (build_backend/maturin_backend.py) that compiles two Rust artifacts
+          # inside the build: the vibe-rs TUI with plain `cargo build`, and the
+          # pyo3 harness extension with `maturin build_wheel`. Both cargo runs
+          # are offline in the Nix sandbox, so every crate from both
+          # Cargo.lock files has to be vendored. rustPlatform.fetchCargoVendor
+          # vendors one lockfile per call; its crate directories are
+          # version-suffixed, so the union of the two serves both builds from
+          # a single crates-io source replacement.
+          cargoVendor = pkgs.runCommand "mistral-vibe-cargo-vendor" {
+            cliDeps = pkgs.rustPlatform.fetchCargoVendor {
+              name = "mistral-vibe-cli-rust-deps";
+              src = mistral-vibe-src-patched;
+              cargoRoot = "vibe/cli-rust";
+              hash = "sha256-LGEjJuTBdoUR83Q5UeNKahJTwkxQIm8S9d+l/KDKpnc=";
+            };
+            harnessDeps = pkgs.rustPlatform.fetchCargoVendor {
+              name = "mistral-vibe-harness-core-deps";
+              src = mistral-vibe-src-patched;
+              cargoRoot = "harness/core";
+              hash = "sha256-3ykvTIESFANShoj3gFYw+vDoJCETOft0xYKCgpn2Iy0=";
+            };
+          } ''
+            mkdir -p $out/.cargo $out/source-registry-0
+            cp -rn $cliDeps/source-registry-0/. $out/source-registry-0/
+            cp -rn $harnessDeps/source-registry-0/. $out/source-registry-0/
+            # Both lockfiles use only the crates.io registry, so either
+            # config.toml works; it just has to point at the merged directory.
+            cp $cliDeps/.cargo/config.toml $out/.cargo/config.toml
+          '';
+
+          # Prebuilt rusty_v8 static library for the harness build; handed to
+          # the v8 crate through RUSTY_V8_ARCHIVE below.
+          rustyV8Archive = pkgs.fetchurl {
+            url = "https://github.com/denoland/rusty_v8/releases/download/v150.3.0/${rustyV8Archives.${system}}";
+            hash = "sha256-2wl+bvpVp14L3oayuhl5g9CpG76DAfRVDEkNecB9evA=";
+          };
 
           # Load workspace from upstream source
           workspace = uv2nix.lib.workspace.loadWorkspace {
@@ -82,7 +133,7 @@
             # WORKAROUND: proot (Termux) does not support fchmodat(AT_FDCWD,"",AT_EMPTY_PATH),
             # causing GNU coreutils cp to fail with ENOENT when copying the source directory.
             # Use tar instead of cp for the unpackPhase. Safe on all platforms.
-            mistral-vibe = prev.mistral-vibe.overrideAttrs (_: {
+            mistral-vibe = prev.mistral-vibe.overrideAttrs (oldAttrs: {
               unpackPhase = ''
                 runHook preUnpack
                 mkdir source
@@ -90,6 +141,49 @@
                 chmod -R u+w source
                 sourceRoot="source"
                 runHook postUnpack
+              '';
+
+              # Toolchain for the backend's two cargo builds; maturin itself
+              # comes in through [build-system].requires. On Linux the backend
+              # forces maturin's --zig mode for the manylinux_2_28 wheel:
+              # cargo-zigbuild looks for `python -m ziglang` first and falls
+              # back to a plain `zig` on PATH, so pkgs.zig covers it (nixpkgs
+              # ships zig 0.16.0, matching the ziglang==0.16.0 the backend
+              # otherwise asks for dynamically).
+              nativeBuildInputs = (oldAttrs.nativeBuildInputs or [ ]) ++ [
+                pkgs.cargo
+                pkgs.rustc
+              ] ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+                pkgs.zig
+              ];
+
+              # The TUI's default features include `voice`, whose cpal
+              # dependency links ALSA via pkg-config. Upstream's release CI
+              # builds the wheel with `--no-default-features`, and the backend
+              # appends CARGO_BUILD_FLAGS to its `cargo build` invocation.
+              CARGO_BUILD_FLAGS = "--no-default-features";
+
+              preBuild = ''
+                # Point both cargo runs (the vibe-rs TUI and maturin's harness
+                # build) at the vendored crates, the same way
+                # rustPlatform.cargoSetupHook consumes a fetchCargoVendor
+                # output: substitute the @vendor@ placeholder in its config
+                # with the store path of the vendor directory. The config sits
+                # in the source root, so it also covers the harness copy the
+                # backend stages into .native-build before maturin runs.
+                mkdir -p .cargo
+                substitute ${cargoVendor}/.cargo/config.toml .cargo/config.toml \
+                  --subst-var-by vendor ${cargoVendor}
+
+                # Writable scratch state for cargo, and for cargo-zigbuild's
+                # cache ($HOME is read-only in the sandbox).
+                export CARGO_HOME="$PWD/.cargo-home"
+                mkdir -p "$CARGO_HOME"
+                export XDG_CACHE_HOME="$PWD/.cache"
+                mkdir -p "$XDG_CACHE_HOME"
+
+                # The v8 crate would otherwise download this at build time.
+                export RUSTY_V8_ARCHIVE="${rustyV8Archive}"
               '';
             });
           };
@@ -130,7 +224,8 @@
             for exe in vibe vibe-acp; do
               if [ -f "${venv}/bin/$exe" ]; then
                 makeWrapper "${venv}/bin/$exe" "$out/bin/$exe" \
-                  --prefix PATH : ${lib.makeBinPath [ pkgs.ripgrep pkgs.git ]}
+                  --prefix PATH : ${lib.makeBinPath [ pkgs.ripgrep pkgs.git ]} \
+                  --prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath (lib.optionals pkgs.stdenv.hostPlatform.isLinux [ pkgs.libgcc ])}
               fi
             done
 
