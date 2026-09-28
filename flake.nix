@@ -82,20 +82,6 @@
           pkgs = nixpkgs.legacyPackages.${system};
           lib = pkgs.lib;
 
-          # WORKAROUND: upstream's pyproject.toml has declared [[tool.uv.index]]
-          # before [tool.uv] since v2.24.3 (mistralai/mistral-vibe@a84be03),
-          # still unfixed as of v2.25.8. Nix's fromTOML rejects that ordering
-          # as "table defined twice", so loadWorkspace can't read the file
-          # as-is. Swap the two blocks back to the order that parses; drop
-          # this once upstream reorders them.
-          mistral-vibe-src-patched = pkgs.runCommand "mistral-vibe-src-patched" {
-            nativeBuildInputs = [ pkgs.python3 ];
-          } ''
-            cp -r ${mistral-vibe-src} $out
-            chmod -R u+w $out
-            python3 ${./fix-pyproject-toml-order.py} "$out/pyproject.toml"
-          '';
-
           # Since v2.25.8 the wheel is produced by a custom maturin backend
           # (build_backend/maturin_backend.py) that compiles two Rust artifacts
           # inside the build: the vibe-rs TUI with plain `cargo build`, and the
@@ -108,13 +94,13 @@
           cargoVendor = pkgs.runCommand "mistral-vibe-cargo-vendor" {
             cliDeps = pkgs.rustPlatform.fetchCargoVendor {
               name = "mistral-vibe-cli-rust-deps";
-              src = mistral-vibe-src-patched;
+              src = mistral-vibe-src;
               cargoRoot = "vibe/cli-rust";
               hash = "sha256-LGEjJuTBdoUR83Q5UeNKahJTwkxQIm8S9d+l/KDKpnc=";
             };
             harnessDeps = pkgs.rustPlatform.fetchCargoVendor {
               name = "mistral-vibe-harness-core-deps";
-              src = mistral-vibe-src-patched;
+              src = mistral-vibe-src;
               cargoRoot = "harness/core";
               hash = "sha256-3ykvTIESFANShoj3gFYw+vDoJCETOft0xYKCgpn2Iy0=";
             };
@@ -138,7 +124,7 @@
 
           # Load workspace from upstream source
           workspace = uv2nix.lib.workspace.loadWorkspace {
-            workspaceRoot = mistral-vibe-src-patched;
+            workspaceRoot = mistral-vibe-src;
           };
 
           # Use Python 3.12 (minimum required version)
@@ -163,19 +149,7 @@
               ];
             });
 
-            # WORKAROUND: proot (Termux) does not support fchmodat(AT_FDCWD,"",AT_EMPTY_PATH),
-            # causing GNU coreutils cp to fail with ENOENT when copying the source directory.
-            # Use tar instead of cp for the unpackPhase. Safe on all platforms.
             mistral-vibe = prev.mistral-vibe.overrideAttrs (oldAttrs: {
-              unpackPhase = ''
-                runHook preUnpack
-                mkdir source
-                tar cf - -C "$src" . | tar xf - -C source
-                chmod -R u+w source
-                sourceRoot="source"
-                runHook postUnpack
-              '';
-
               # Toolchain for the backend's two cargo builds; maturin itself
               # comes in through [build-system].requires. On Linux the backend
               # forces maturin's --zig mode for the manylinux_2_28 wheel:
