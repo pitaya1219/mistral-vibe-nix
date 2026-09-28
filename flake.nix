@@ -40,10 +40,22 @@
       # selects the archive name (see prebuilt_features_suffix in the v8 build
       # script).
       rustyV8Archives = {
-        "x86_64-linux" = "librusty_v8_simdutf_release_x86_64-unknown-linux-gnu.a.gz";
-        "aarch64-linux" = "librusty_v8_simdutf_release_aarch64-unknown-linux-gnu.a.gz";
-        "x86_64-darwin" = "librusty_v8_simdutf_release_x86_64-apple-darwin.a.gz";
-        "aarch64-darwin" = "librusty_v8_simdutf_release_aarch64-apple-darwin.a.gz";
+        "x86_64-linux" = {
+          file = "librusty_v8_simdutf_release_x86_64-unknown-linux-gnu.a.gz";
+          hash = "sha256-2wl+bvpVp14L3oayuhl5g9CpG76DAfRVDEkNecB9evA=";
+        };
+        "aarch64-linux" = {
+          file = "librusty_v8_simdutf_release_aarch64-unknown-linux-gnu.a.gz";
+          hash = "sha256-WR80+czoM+IAeYduyM4gsR0Y6jGk9BL0u6EQGB3ZdrY=";
+        };
+        "x86_64-darwin" = {
+          file = "librusty_v8_simdutf_release_x86_64-apple-darwin.a.gz";
+          hash = "sha256-fs7glB27R0inqhS4+PufsVLUhj09NCLOshbnRBc+5mI=";
+        };
+        "aarch64-darwin" = {
+          file = "librusty_v8_simdutf_release_aarch64-apple-darwin.a.gz";
+          hash = "sha256-UfWFt8OGkwYSn/1haKjwuJqNSjhw3LBwlgwrT9fQSCU=";
+        };
       };
 
       mkMistralVibe = system:
@@ -99,8 +111,8 @@
           # Prebuilt rusty_v8 static library for the harness build; handed to
           # the v8 crate through RUSTY_V8_ARCHIVE below.
           rustyV8Archive = pkgs.fetchurl {
-            url = "https://github.com/denoland/rusty_v8/releases/download/v150.3.0/${rustyV8Archives.${system}}";
-            hash = "sha256-2wl+bvpVp14L3oayuhl5g9CpG76DAfRVDEkNecB9evA=";
+            url = "https://github.com/denoland/rusty_v8/releases/download/v150.3.0/${rustyV8Archives.${system}.file}";
+            inherit (rustyV8Archives.${system}) hash;
           };
 
           # Load workspace from upstream source
