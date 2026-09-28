@@ -236,7 +236,7 @@
         in
         pkgs.stdenv.mkDerivation {
           pname = "mistral-vibe";
-          version = "1.3.5";
+          version = "2.25.8";
 
           dontUnpack = true;
 
