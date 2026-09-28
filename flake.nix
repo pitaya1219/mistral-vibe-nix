@@ -38,7 +38,39 @@
       # prebuilt_features_suffix in the v8 build script). Every part of that but
       # the target triple is fixed here, so the pin is a per-system archive and
       # nothing else.
-      rustyV8 = import ./rusty-v8.nix;
+      # What the crate itself would have fetched. RUSTY_V8_ARCHIVE is returned
+      # verbatim by static_lib_url() without any comparison against
+      # CARGO_PKG_VERSION, so archives left behind by an upstream bump are
+      # accepted and linked: the fetch still succeeds, because its URL and hash
+      # agree with each other and only disagree with the crate. Reading the
+      # wanted version out of the lockfile is what makes that drift visible.
+      lockedV8Version =
+        let
+          lock = builtins.fromTOML
+            (builtins.readFile "${mistral-vibe-src}/harness/core/Cargo.lock");
+          v8 = builtins.filter (pkg: pkg.name == "v8") lock.package;
+        in
+        if v8 == [ ] then
+          throw ("No v8 crate in harness/core/Cargo.lock, so the rusty_v8 pin "
+            + "in rusty-v8.nix has nothing to track. Has the harness stopped "
+            + "using deno_core?")
+        else (builtins.head v8).version;
+
+      # Asserted here rather than at the fetch so that reading the pin at all
+      # trips it -- supportedSystems below forces this, which every output of
+      # the flake goes through, so a stale pin fails on every system at once
+      # instead of surfacing as a link error on whichever one is built first.
+      rustyV8 =
+        let pinned = import ./rusty-v8.nix;
+        in
+        assert nixpkgs.lib.assertMsg (pinned.version == lockedV8Version) ''
+          rusty-v8.nix pins the prebuilt archives for v8 ${pinned.version}, but
+          harness/core/Cargo.lock now wants v8 ${lockedV8Version}; the pinned
+          archives would link the wrong V8.
+
+          Run ./update-rusty-v8.py and commit the result.
+        '';
+        pinned;
 
       # Each supported system needs a pinned archive, so the two lists are one.
       supportedSystems = builtins.attrNames rustyV8.targets;
