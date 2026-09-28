@@ -29,7 +29,9 @@
 
   outputs = { self, nixpkgs, pyproject-nix, uv2nix, pyproject-build-systems, mistral-vibe-src }:
     let
-      supportedSystems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
+      # x86_64-darwin is absent: nixpkgs 26.11 dropped the platform, so it
+      # cannot even evaluate against this pin.
+      supportedSystems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" ];
 
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
 
@@ -47,10 +49,6 @@
         "aarch64-linux" = {
           file = "librusty_v8_simdutf_release_aarch64-unknown-linux-gnu.a.gz";
           hash = "sha256-WR80+czoM+IAeYduyM4gsR0Y6jGk9BL0u6EQGB3ZdrY=";
-        };
-        "x86_64-darwin" = {
-          file = "librusty_v8_simdutf_release_x86_64-apple-darwin.a.gz";
-          hash = "sha256-fs7glB27R0inqhS4+PufsVLUhj09NCLOshbnRBc+5mI=";
         };
         "aarch64-darwin" = {
           file = "librusty_v8_simdutf_release_aarch64-apple-darwin.a.gz";
