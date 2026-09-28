@@ -29,22 +29,21 @@
 
   outputs = { self, nixpkgs, pyproject-nix, uv2nix, pyproject-build-systems, mistral-vibe-src }:
     let
-      supportedSystems = [ "x86_64-linux" "aarch64-linux" "aarch64-darwin" "x86_64-darwin" ];
-
-      forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
-
       # The harness extension compiles the `v8` crate (pulled in by deno_core),
       # whose build script downloads a prebuilt static library from the rusty_v8
       # GitHub release at build time unless RUSTY_V8_ARCHIVE points at a local
-      # copy. deno_core enables only the `simdutf` feature of v8, which is what
-      # selects the archive name (see prebuilt_features_suffix in the v8 build
-      # script).
-      rustyV8Archives = {
-        "x86_64-linux" = "librusty_v8_simdutf_release_x86_64-unknown-linux-gnu.a.gz";
-        "aarch64-linux" = "librusty_v8_simdutf_release_aarch64-unknown-linux-gnu.a.gz";
-        "x86_64-darwin" = "librusty_v8_simdutf_release_x86_64-apple-darwin.a.gz";
-        "aarch64-darwin" = "librusty_v8_simdutf_release_aarch64-apple-darwin.a.gz";
-      };
+      # copy. The name it would have fetched is assembled from the crate's own
+      # version, the target triple, the profile, and the features deno_core
+      # enables -- only `simdutf` (see static_lib_url and
+      # prebuilt_features_suffix in the v8 build script). Every part of that but
+      # the target triple is fixed here, so the pin is a per-system archive and
+      # nothing else.
+      rustyV8 = import ./rusty-v8.nix;
+
+      # Each supported system needs a pinned archive, so the two lists are one.
+      supportedSystems = builtins.attrNames rustyV8.targets;
+
+      forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
 
       mkMistralVibe = system:
         let
@@ -99,8 +98,10 @@
           # Prebuilt rusty_v8 static library for the harness build; handed to
           # the v8 crate through RUSTY_V8_ARCHIVE below.
           rustyV8Archive = pkgs.fetchurl {
-            url = "https://github.com/denoland/rusty_v8/releases/download/v150.3.0/${rustyV8Archives.${system}}";
-            hash = "sha256-2wl+bvpVp14L3oayuhl5g9CpG76DAfRVDEkNecB9evA=";
+            url = "https://github.com/denoland/rusty_v8/releases/download/"
+              + "v${rustyV8.version}/librusty_v8_simdutf_release_"
+              + "${rustyV8.targets.${system}}.a.gz";
+            hash = rustyV8.hashes.${system};
           };
 
           # Load workspace from upstream source
