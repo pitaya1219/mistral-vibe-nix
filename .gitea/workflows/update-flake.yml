@@ -40,6 +40,9 @@ jobs:
       - name: Update flake inputs
         run: nix flake update
 
+      - name: Refresh the vendored crate hashes
+        run: ./update-cargo-vendor.py
+
       - name: Check for changes and create PR
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -49,9 +52,9 @@ jobs:
         run: |
           echo "=== Checking for changes ==="
           git status
-          git diff --stat flake.lock || true
+          git diff --stat flake.lock cargo-vendor.nix || true
 
-          if git diff --quiet flake.lock; then
+          if git diff --quiet flake.lock cargo-vendor.nix; then
             echo "No changes to flake.lock"
             exit 0
           fi
@@ -59,7 +62,7 @@ jobs:
           echo "=== Changes detected, creating PR ==="
           BRANCH="chore/auto-update-flake"
           git checkout -B "$BRANCH"
-          git add flake.lock
+          git add flake.lock cargo-vendor.nix
           git commit -m "chore: Update flake.lock."
 
           echo "=== Pushing branch ==="

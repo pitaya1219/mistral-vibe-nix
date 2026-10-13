@@ -72,6 +72,8 @@
         '';
         pinned;
 
+      cargoVendorPins = import ./cargo-vendor.nix;
+
       # Each supported system needs a pinned archive, so the two lists are one.
       supportedSystems = builtins.attrNames rustyV8.targets;
 
@@ -92,18 +94,12 @@
           # version-suffixed, so the union of the two serves both builds from
           # a single crates-io source replacement.
           cargoVendor = pkgs.runCommand "mistral-vibe-cargo-vendor" {
-            cliDeps = pkgs.rustPlatform.fetchCargoVendor {
-              name = "mistral-vibe-cli-rust-deps";
+            cliDeps = pkgs.rustPlatform.fetchCargoVendor (cargoVendorPins.cli // {
               src = mistral-vibe-src;
-              cargoRoot = "vibe/cli-rust";
-              hash = "sha256-LGEjJuTBdoUR83Q5UeNKahJTwkxQIm8S9d+l/KDKpnc=";
-            };
-            harnessDeps = pkgs.rustPlatform.fetchCargoVendor {
-              name = "mistral-vibe-harness-core-deps";
+            });
+            harnessDeps = pkgs.rustPlatform.fetchCargoVendor (cargoVendorPins.harness // {
               src = mistral-vibe-src;
-              cargoRoot = "harness/core";
-              hash = "sha256-3ykvTIESFANShoj3gFYw+vDoJCETOft0xYKCgpn2Iy0=";
-            };
+            });
           } ''
             mkdir -p $out/.cargo $out/source-registry-0
             cp -rn $cliDeps/source-registry-0/. $out/source-registry-0/
