@@ -146,19 +146,19 @@
             });
 
             mistral-vibe = prev.mistral-vibe.overrideAttrs (oldAttrs: {
-              # Toolchain for the backend's two cargo builds; maturin itself
-              # comes in through [build-system].requires. On Linux the backend
-              # forces maturin's --zig mode for the manylinux_2_28 wheel:
-              # cargo-zigbuild looks for `python -m ziglang` first and falls
-              # back to a plain `zig` on PATH, so pkgs.zig covers it (nixpkgs
-              # ships zig 0.16.0, matching the ziglang==0.16.0 the backend
-              # otherwise asks for dynamically).
               nativeBuildInputs = (oldAttrs.nativeBuildInputs or [ ]) ++ [
                 pkgs.cargo
                 pkgs.rustc
-              ] ++ lib.optionals pkgs.stdenv.hostPlatform.isLinux [
-                pkgs.zig
               ];
+
+              # Upstream's default Linux wheel is a manylinux_2_28 build linked
+              # with zig. The backend hands cargo the host triple as --target
+              # and zig as that triple's linker, which cargo also applies to
+              # the build scripts. Those come out with an FHS ELF interpreter
+              # that does not exist in the sandbox, so the first one fails with
+              # "No such file or directory". The wheel only has to run from
+              # this store, so ask for a native one linked by the Nix toolchain.
+              MATURIN_PEP517_ARGS = "--compatibility linux";
 
               # The TUI's default features include `voice`, whose cpal
               # dependency links ALSA via pkg-config. Upstream's release CI
