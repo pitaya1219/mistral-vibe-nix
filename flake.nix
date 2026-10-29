@@ -158,7 +158,8 @@
               # that does not exist in the sandbox, so the first one fails with
               # "No such file or directory". The wheel only has to run from
               # this store, so ask for a native one linked by the Nix toolchain.
-              MATURIN_PEP517_ARGS = "--compatibility linux";
+              MATURIN_PEP517_ARGS =
+                lib.optionalString pkgs.stdenv.hostPlatform.isLinux "--compatibility linux";
 
               # The TUI's default features include `voice`, whose cpal
               # dependency links ALSA via pkg-config. Upstream's release CI
