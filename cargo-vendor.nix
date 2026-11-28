@@ -9,12 +9,12 @@
   cli = {
     name = "mistral-vibe-cli-rust-deps";
     cargoRoot = "vibe/cli-rust";
-    hash = "sha256-oKtjHXlWSnA/RHqWCmiy5ZOapX5J4LFYQEMqJN52Mr4=";
+    hash = "sha256-DQIkrj/grVTh/4K5iSgqGd9gcWfcPhRKFqigmdlHv4s=";
   };
 
   harness = {
     name = "mistral-vibe-harness-core-deps";
     cargoRoot = "harness/core";
-    hash = "sha256-AzZBYZrusBynp0HFJZyAgcRXjPXey+d8gMFR/4/3IO4=";
+    hash = "sha256-HGYTsDY9XOprkaJfPM7ECzyeugBGiGCwyYXr1UFvVxc=";
   };
 }
